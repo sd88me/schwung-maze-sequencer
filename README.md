@@ -1,12 +1,12 @@
-# Maze Seq — dual generative sequencer for Ableton Move (Schwung)
+# Maze Sequencer — dual generative sequencer for Ableton Move (Schwung)
 
 Two Moog-Labyrinth-inspired generative sequencers for the [Schwung](https://github.com/charlesvestal/schwung)
 framework on Ableton Move. This repository ships **two** modules:
 
 | Module | ID | Type | What it is |
 |---|---|---|---|
-| **Maze Seq** | `maze_seq` | overtake tool | Full pad + step-button instrument with its own display |
-| **Maze Seq Lite** | `maze_seq_lite` | slot MIDI FX | The same engine as a chain MIDI-FX slot (auto knob menu) |
+| **Maze** | `maze_seq` | overtake tool | Full pad + step-button instrument with its own display |
+| **Maze Lite** | `maze_seq_lite` | slot MIDI FX | The same engine as a chain MIDI-FX slot (auto knob menu) |
 
 Both run two 8-step generative sequencers that clock-sync to the Move transport,
 quantise random voltages to a scale, and play MIDI out — a recreation of the
