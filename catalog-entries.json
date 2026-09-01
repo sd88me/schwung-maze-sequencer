@@ -1,0 +1,27 @@
+{
+  "_comment": "Add these two objects to the 'modules' array in Schwung's module-catalog.json (open a PR against charlesvestal/schwung). Replace YOUR_GITHUB_USER.",
+  "entries": [
+    {
+      "id": "maze_seq",
+      "name": "Maze Seq",
+      "description": "Dual generative sequencer (Moog Labyrinth style) with pad + step-button control. Overtake tool.",
+      "author": "Sam Di Domizio",
+      "component_type": "tool",
+      "github_repo": "sd88me/schwung-maze-seq",
+      "default_branch": "main",
+      "asset_name": "maze_seq-module.tar.gz",
+      "min_host_version": "0.3.0"
+    },
+    {
+      "id": "maze_seq_lite",
+      "name": "Maze Seq Lite",
+      "description": "Dual generative clock-synced sequencer (Moog Labyrinth style). Slot MIDI FX.",
+      "author": "Sam Di Domizio",
+      "component_type": "midi_fx",
+      "github_repo": "sd88me/schwung-maze-seq",
+      "default_branch": "main",
+      "asset_name": "maze_seq_lite-module.tar.gz",
+      "min_host_version": "0.3.0"
+    }
+  ]
+}

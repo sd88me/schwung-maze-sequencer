@@ -1,0 +1,10 @@
+# build output
+dist/
+
+# vendored Schwung headers (fetched from the host repo at build time)
+src/include/
+
+# OS / editor cruft
+.DS_Store
+*:Zone.Identifier
+*:mshield

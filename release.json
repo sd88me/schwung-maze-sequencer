@@ -1,0 +1,12 @@
+{
+  "modules": {
+    "maze_seq": {
+      "version": "1.0.0",
+      "download_url": "https://github.com/sd88me/schwung-maze-seq/releases/download/v1.0.0/maze_seq-module.tar.gz"
+    },
+    "maze_seq_lite": {
+      "version": "1.0.0",
+      "download_url": "https://github.com/sd88me/schwung-maze-seq/releases/download/v1.0.0/maze_seq_lite-module.tar.gz"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The two Schwung API headers are kept out of git so they track the host
+      # ABI. Fetch them from the Schwung repo at build time.
+      - name: Vendor Schwung headers
+        run: |
+          mkdir -p src/include
+          base="https://raw.githubusercontent.com/charlesvestal/schwung/main/src/host"
+          curl -fsSL "$base/plugin_api_v1.h"  -o src/include/plugin_api_v1.h
+          curl -fsSL "$base/midi_fx_api_v1.h" -o src/include/midi_fx_api_v1.h
+
+      - name: Build modules
+        run: bash scripts/build.sh
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/maze_seq-module.tar.gz
+            dist/maze_seq_lite-module.tar.gz
+
+      - name: Update release.json on main
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          git fetch origin main
+          git checkout -f main
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cat > release.json <<EOF
+          {
+            "modules": {
+              "maze_seq": {
+                "version": "${VERSION}",
+                "download_url": "${BASE}/maze_seq-module.tar.gz"
+              },
+              "maze_seq_lite": {
+                "version": "${VERSION}",
+                "download_url": "${BASE}/maze_seq_lite-module.tar.gz"
+              }
+            }
+          }
+          EOF
+          git add release.json
+          git commit -m "chore: release ${GITHUB_REF_NAME}" || echo "no changes"
+          git push origin main
