@@ -1,19 +1,28 @@
 /* ============================================================================
- * MAZE SEQ  —  Overtake UI for Ableton Move (Schwung)
+ * MAZE  —  Overtake UI for Ableton Move (Schwung)            [id: maze_seq]
  * ----------------------------------------------------------------------------
  * Pads + step buttons + knobs + display. ALL sequencing lives in dsp.so
- * (maze_seq.c). This file draws the surface and forwards control changes via
- * host_module_set_param / reads bit+play state via host_module_get_param.
+ * (maze_seq.c). This file draws the surface and forwards control changes.
  *
  * Hardware map (confirmed from the stock tb3po UI):
  *   16 step buttons = notes 16..31 (1-8 SEQ1 bits, 9-16 SEQ2 bits)
  *   Pad grid 4x8    = notes 68..99 (row0 68-75 bottom .. row3 92-99 top)
- *   Knobs           = CC 71..78 (relative encoders)
- *   + / -           = CC 55 / 54   (octave transpose)
+ *   Knobs (in)      = CC 71..78 (relative encoders)
+ *   Knob LEDs (out) = CC 71..78 (indicator brightness / colour)
+ *   Jog turn/click  = CC 14 / 3
+ *   + / -           = CC 55 / 54
  *   Back / Shift    = CC 51 / 49
- *   Track 1..4      = CC 43/42/41/40  (T1/T2 = knob page 1/2)
  *
- * LED queue only flushes ~16 LEDs/tick -> budgeted, diff-based updater below.
+ * v1.1 changes:
+ *   - JOG WHEEL switches the two knob pages (was Track 1/2).
+ *   - + / - move the pad KEYBOARD up/down an octave (reach higher/lower
+ *     notes) instead of transposing the sequence directly.
+ *   - Knob indicator LEDs: Move's knob LEDs are RGB palette (not brightness),
+ *     so we light an in-use knob steady WHITE and leave free knobs off; the
+ *     Trig Mix knob is two-coloured (red side / off centre / teal-blue side).
+ *   - + / - shift the pad KEYBOARD by an octave WITHOUT changing the sounding
+ *     transpose: the selected note keeps playing, its highlight just moves rows.
+ *   - Page 1 renamed "SEQUENCERS"; Xpose shown on both pages; RUN/stop removed.
  * ==========================================================================*/
 
 import { setLED as sharedSetLED, setButtonLED as sharedSetButtonLED }
@@ -21,14 +30,18 @@ import { setLED as sharedSetLED, setButtonLED as sharedSetButtonLED }
 
 const NOTE_STEP_BASE = 16;
 const NOTE_PAD_BASE  = 68;
-const CC_KNOB_BASE   = 71;
+const CC_KNOB_BASE   = 71;              /* knobs in AND indicator LEDs out */
+const CC_JOG   = 14;
 const CC_SHIFT = 49, CC_BACK = 51;
 const CC_DOWN  = 54, CC_UP = 55;
-const CC_T1 = 43, CC_T2 = 42;
 
 /* LED colours (Move velocities). Value 8 = play-head colour on this unit. */
 const LED_OFF=0, LED_RED=1, LED_HEAD=8, LED_GREEN=8, LED_ORANGE=47,
       LED_BLUE=95, LED_WHITE=120, LED_GREY=124, LED_TEAL=87;
+
+/* ==>> EDIT ME: set false if your knob-indicator LEDs are white-only and the
+   two-colour Trig Mix doesn't render — it will then use brightness-from-centre. */
+const TRIG_MIX_TWO_COLOUR = true;
 
 /* Scales — MUST match SCALES[] order in maze_seq.c */
 const SCALES = [
@@ -52,11 +65,10 @@ const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 /* UI owns everything except bit/play/running (those are polled from the DSP). */
 const U = {
   page:0,
-  s1_corrupt:0, s1_cv_range:50, s1_length:8, s1_channel:0,
-  s2_corrupt:0, s2_cv_range:50, s2_length:8, s2_channel:1,
+  s1_corrupt:0, s1_cv_range:20, s1_length:8, s1_channel:0,
+  s2_corrupt:0, s2_cv_range:20, s2_length:8, s2_channel:0,
   trig_mix:0, scale:1, key:0, rate:1, gate:3,
-  transpose:0, running:0,
-  pad_semis:0, padRow:2, padCol:0,   /* active transpose pad (default = HOME) */
+  pad_semis:0, padOct:0, padRow:2, padCol:0,   /* padOct = keyboard octave shift */
   s1_bits:[0,0,0,0,0,0,0,0], s1_play:-1,
   s2_bits:[0,0,0,0,0,0,0,0], s2_play:-1
 };
@@ -74,26 +86,19 @@ function parseState(str, bits){
   const play=p.length>2?(parseInt(p[2],10)):-1;
   return {len,play};
 }
-/* Poll ONLY what the DSP owns: bit patterns, play head, running. */
 function pollDsp(){
   const a=parseState(getP("s1_state"), U.s1_bits); U.s1_length=a.len; U.s1_play=a.play;
   const b=parseState(getP("s2_state"), U.s2_bits); U.s2_length=b.len; U.s2_play=b.play;
-  if((pollTick%10)===0){
-    const r=getP("running"); if(r!==null&&r!=="") U.running=parseInt(r,10)|0;
-  }
   pollTick++;
 }
 
-/* Push every UI-owned param to the DSP. Called on init AND periodically, so a
-   suspend/resume DSP reload (which boots on stale/default values) can never
-   silently revert what the UI shows. This is why the Key knob now sticks. */
+/* Push UI-owned params to the DSP (init + periodic) so a suspend/resume DSP
+   reload can't silently revert them. */
 function assertOwnedParams(){
-  setP("scale",U.scale);
-  setP("key",U.key);
-  setP("note_rate",U.rate);
-  setP("note_length",U.gate);
+  setP("scale",U.scale); setP("key",U.key);
+  setP("note_rate",U.rate); setP("note_length",U.gate);
   setP("trig_mix",U.trig_mix);
-  setP("transpose",U.transpose);
+  setP("transpose","0");                 /* octave now lives in pad_semis */
   setP("pad_semis",U.pad_semis);
   setP("s1_corrupt",U.s1_corrupt);  setP("s1_cv_range",U.s1_cv_range);  setP("s1_length",U.s1_length);  setP("s1_channel",U.s1_channel);
   setP("s2_corrupt",U.s2_corrupt);  setP("s2_cv_range",U.s2_cv_range);  setP("s2_length",U.s2_length);  setP("s2_channel",U.s2_channel);
@@ -114,7 +119,7 @@ function adjStep(key, prop, delta, lo, hi){
 
 function handleKnob(idx, delta){
   if(delta===0) return;
-  if(U.page===0){                          /* PAGE 1: SEQUENCER CONTROL */
+  if(U.page===0){                          /* PAGE 1: SEQUENCERS */
     switch(idx){
       case 0: adjCont("s1_corrupt","s1_corrupt",delta,0,100); break;
       case 1: adjCont("s1_cv_range","s1_cv_range",delta,0,100); break;
@@ -125,7 +130,7 @@ function handleKnob(idx, delta){
       case 6: adjStep("s2_length","s2_length",delta,1,8); break;
       /* case 7: free */
     }
-  } else {                                 /* PAGE 2: GLOBAL SETTINGS */
+  } else {                                 /* PAGE 2: GLOBAL */
     switch(idx){
       case 0: adjStep("scale","scale",delta,0,SCALES.length-1); break;
       case 1: adjStep("key","key",delta,0,11); break;
@@ -138,12 +143,10 @@ function handleKnob(idx, delta){
   }
 }
 
-/* ---- fixed SCALE-MODE transpose keyboard (top 3 pad rows) -----------------
- * Regular scale layout: within a row = ascending scale degrees; each row up =
- * +1 octave. HOME (row 2, col 0) = root = 0 transpose, so row 1 = one octave
- * DOWN and row 3 = one octave UP. Pressing a pad transposes the whole sequence
- * by that pad's interval from the root. Layout is fixed; Key knob sets the base
- * key underneath.  ==>> EDIT ME: HOME_ROW/HOME_COL choose the root pad. */
+/* ---- fixed SCALE-MODE keyboard (top 3 pad rows) --------------------------
+ * Within a row = ascending scale degrees; each row up = +1 octave. HOME
+ * (row 2, col 0) = root. + / - shift the whole keyboard by an octave via
+ * padOct, so you can reach higher/lower registers with the same pads. */
 const HOME_ROW = 2, HOME_COL = 0;
 function degreeToSemitone(deg){
   const sc=SCALES[U.scale]; const n=sc.pc.length;
@@ -154,8 +157,28 @@ function padDegree(padRow, col){
   const n=SCALES[U.scale].pc.length;
   return (padRow-1)*n + col;
 }
+/* interval a pad represents = degrees-from-home + keyboard octave shift.
+   Shifting padOct moves every pad's note by an octave, so the same note value
+   appears on a different row (that's the "move the layout" behaviour). */
 function padSemis(padRow, col){
-  return degreeToSemitone(padDegree(padRow,col)) - degreeToSemitone(padDegree(HOME_ROW,HOME_COL));
+  const base = degreeToSemitone(padDegree(padRow,col))
+             - degreeToSemitone(padDegree(HOME_ROW,HOME_COL));
+  return base + U.padOct*12;
+}
+/* After an octave shift, keep the highlight on the SAME sounding note by finding
+   whichever pad now maps to U.pad_semis. Prefer the same column so the highlight
+   tracks cleanly (7-note scales duplicate a note at col 7). Off-grid -> clear. */
+function relocateHighlight(){
+  const preferCol=U.padCol;
+  let found=null;
+  for(let row=1;row<=3;row++)
+    for(let col=0;col<8;col++)
+      if(padSemis(row,col)===U.pad_semis){
+        if(col===preferCol){ U.padRow=row; U.padCol=col; return; }
+        if(!found) found=[row,col];
+      }
+  if(found){ U.padRow=found[0]; U.padCol=found[1]; }
+  else { U.padRow=-1; U.padCol=-1; }
 }
 
 globalThis.onMidiMessageInternal = function(data){
@@ -169,13 +192,19 @@ globalThis.onMidiMessageInternal = function(data){
   if(type===0xB0 && d1===CC_SHIFT){ shiftHeld=(d2>0); return; }
   if(type===0xB0 && d1===CC_BACK && d2>0){ if(shiftHeld) setP("panic","1"); else setP("suspend","1"); return; }
 
-  if(type===0xB0 && d1===CC_UP && d2>0){ U.transpose=clamp(U.transpose+12,-48,48); setP("transpose",U.transpose); return; }
-  if(type===0xB0 && d1===CC_DOWN && d2>0){ U.transpose=clamp(U.transpose-12,-48,48); setP("transpose",U.transpose); return; }
-
-  if(type===0xB0 && d2>0){
-    if(d1===CC_T1){ U.page=0; return; }
-    if(d1===CC_T2){ U.page=1; return; }
+  /* JOG WHEEL turns between the two knob pages */
+  if(type===0xB0 && d1===CC_JOG){
+    const dd=decodeDelta(d2);
+    if(dd>0) U.page=1; else if(dd<0) U.page=0;
+    return;
   }
+
+  /* + / -  move the pad KEYBOARD by an octave. The sounding note (U.pad_semis)
+     does NOT change — only the grid relabels, so the selected pad shifts rows.
+     Up  -> notes move to higher rows (root climbs toward row 3).
+     Down-> notes move to lower rows  (root drops toward row 1). */
+  if(type===0xB0 && d1===CC_UP && d2>0){   U.padOct=clamp(U.padOct+1,-4,4); relocateHighlight(); return; }
+  if(type===0xB0 && d1===CC_DOWN && d2>0){ U.padOct=clamp(U.padOct-1,-4,4); relocateHighlight(); return; }
 
   if(type===0xB0 && d1>=CC_KNOB_BASE && d1<CC_KNOB_BASE+8){ handleKnob(d1-CC_KNOB_BASE, decodeDelta(d2)); return; }
 
@@ -199,9 +228,9 @@ globalThis.onMidiMessageInternal = function(data){
         case 6: setP("s2_len_dec","1"); break;
         default: break;
       }
-    } else {                               /* rows 1-3: transpose keyboard */
+    } else {                               /* rows 1-3: keyboard */
       U.padRow=row; U.padCol=col;
-      U.pad_semis = padSemis(row,col);     /* interval from root = transpose */
+      U.pad_semis = padSemis(row,col);
       setP("pad_semis", U.pad_semis);
     }
     return;
@@ -214,8 +243,50 @@ globalThis.onMidiMessageInternal = function(data){
 const shownLED = {};
 function padNote(row,col){ return NOTE_PAD_BASE + row*8 + col; }
 
+/* value fraction 0..1 for a knob's indicator; -1 = off/free; null = special */
+function knobFrac(idx){
+  if(U.page===0){
+    switch(idx){
+      case 0: return U.s1_corrupt/100;
+      case 1: return U.s1_cv_range/100;
+      case 2: return (U.s1_length-1)/7;
+      case 3: return null;                 /* trig mix: coloured, handled below */
+      case 4: return U.s2_corrupt/100;
+      case 5: return U.s2_cv_range/100;
+      case 6: return (U.s2_length-1)/7;
+      default: return -1;
+    }
+  } else {
+    switch(idx){
+      case 0: return U.scale/(SCALES.length-1);
+      case 1: return U.key/11;
+      case 2: return U.rate/(RATE_NAMES.length-1);
+      case 3: return U.gate/(GATE_NAMES.length-1);
+      case 4: return U.s1_channel/15;
+      case 5: return U.s2_channel/15;
+      default: return -1;
+    }
+  }
+}
+/* Trig Mix indicator: 3-coloured. Red on the Seq1 (left) side, WHITE in the
+   centre detent band (|t| <= 10), teal-blue on the Seq2 (right) side.
+   Fixed palette values so the LED never colour-cycles.
+   (If your knob LEDs are white-only, set TRIG_MIX_TWO_COLOUR=false above.) */
+const TRIG_MIX_CENTRE = 10;                /* ==>> EDIT ME: centre band half-width */
+function trigMixLed(){
+  const t=U.trig_mix;
+  if(TRIG_MIX_TWO_COLOUR){
+    if(t < -TRIG_MIX_CENTRE) return LED_RED;    /* left / Seq1 */
+    if(t >  TRIG_MIX_CENTRE) return LED_BLUE;   /* right / Seq2 */
+    return LED_WHITE;                            /* centre +/-10 */
+  }
+  /* white-only fallback: off at centre, steady white when engaged either side */
+  return (t<-TRIG_MIX_CENTRE||t>TRIG_MIX_CENTRE) ? LED_WHITE : LED_OFF;
+}
+
 function desiredLEDs(){
   const list = [];
+  /* step buttons: SEQ1 red bit / SEQ2 blue bit; both heads yellow (held on stop) */
   for(let i=0;i<8;i++){
     let c = U.s1_bits[i]?LED_RED:LED_OFF;
     if(i===U.s1_play && i<U.s1_length) c=LED_HEAD;
@@ -226,18 +297,32 @@ function desiredLEDs(){
     if(i===U.s2_play && i<U.s2_length) c=LED_HEAD;
     list.push(["s", NOTE_STEP_BASE+8+i, i<U.s2_length? c : LED_OFF]);
   }
-  const bottom=[LED_ORANGE,LED_ORANGE,LED_RED,LED_OFF,LED_GREEN,LED_GREEN,LED_BLUE,LED_OFF];
+  /* bottom control row */
+  const bottom=[LED_GREEN,LED_GREEN,LED_RED,LED_OFF,LED_GREEN,LED_GREEN,LED_RED,LED_OFF];
   for(let col=0;col<8;col++) list.push(["p", padNote(0,col), bottom[col]]);
-  /* keyboard rows 1-3: octave roots = white, active pad = orange, other = blue */
+  /* keyboard rows 1-3: octave roots white, active pad teal, other blue */
   for(let row=1;row<=3;row++)
     for(let col=0;col<8;col++){
       let c=LED_BLUE;
       if(((padSemis(row,col)%12)+12)%12===0) c=LED_WHITE;
-      if(row===U.padRow && col===U.padCol) c=LED_ORANGE;
+      if(row===U.padRow && col===U.padCol) c=LED_TEAL;
       list.push(["p", padNote(row,col), c]);
     }
-  list.push(["b",CC_T1,U.page===0?LED_TEAL:LED_GREY]);
-  list.push(["b",CC_T2,U.page===1?LED_TEAL:LED_GREY]);
+  /* knob indicator LEDs (CC 71-78): RGB palette (not brightness). Colour-code
+     the knobs per page so groups read at a glance; free knobs are off; Trig Mix
+     is the 3-colour balance. (Screen still shows the proportional value bar.)
+     ==>> EDIT ME: change these palette values to recolour the knob groups. */
+  const KNOB_COLS = (U.page===0)
+    ? [LED_RED, LED_RED, LED_RED, null,     LED_BLUE, LED_BLUE, LED_BLUE, LED_OFF]   /* SEQUENCERS: k4=trigmix */
+    : [LED_WHITE,LED_WHITE,LED_WHITE,LED_WHITE, LED_GREEN,LED_GREEN, LED_OFF, LED_OFF]; /* GLOBAL */
+  for(let k=0;k<8;k++){
+    const cc=CC_KNOB_BASE+k;
+    let col;
+    if(U.page===0 && k===3){ col=trigMixLed(); }        /* Trig Mix stays 3-colour */
+    else col = (KNOB_COLS[k]===null? LED_OFF : KNOB_COLS[k]);
+    list.push(["b", cc, col]);
+  }
+  /* other buttons */
   list.push(["b",CC_UP,LED_GREY]);
   list.push(["b",CC_DOWN,LED_GREY]);
   list.push(["b",CC_SHIFT,LED_WHITE]);
@@ -277,12 +362,13 @@ function drawKnobCell(idx, label, valStr, frac){
   }
   print(x + 2, yTop + 16, valStr, 1);
 }
+function xposeStr(){ return (U.pad_semis>0?"+":"")+U.pad_semis; }
 
 function draw(){
   if(typeof clear_screen!=="function") return;
   clear_screen();
   if(U.page===0){
-    print(0,0,"SEQ CONTROL      "+(U.running?"RUN":"stop"),1);
+    print(0,0,"SEQUENCERS   Xpose "+xposeStr(),1);
     drawKnobCell(0,"1Cor", ""+U.s1_corrupt,            U.s1_corrupt/100);
     drawKnobCell(1,"1Rng", ""+U.s1_cv_range,           U.s1_cv_range/100);
     drawKnobCell(2,"1Len", ""+U.s1_length,             (U.s1_length-1)/7);
@@ -290,17 +376,17 @@ function draw(){
     drawKnobCell(4,"2Cor", ""+U.s2_corrupt,            U.s2_corrupt/100);
     drawKnobCell(5,"2Rng", ""+U.s2_cv_range,           U.s2_cv_range/100);
     drawKnobCell(6,"2Len", ""+U.s2_length,             (U.s2_length-1)/7);
-    drawKnobCell(7,"", "", null);          // knob 8 free
+    drawKnobCell(7,"", "", null);
   } else {
-    print(0,0,"GLOBAL   Xpose "+(U.pad_semis>0?"+":"")+U.pad_semis+"  "+(U.running?"RUN":"stop"),1);
+    print(0,0,"GLOBAL       Xpose "+xposeStr(),1);
     drawKnobCell(0,"Scale", SCALES[U.scale].name.substr(0,5), U.scale/(SCALES.length-1));
     drawKnobCell(1,"Key",   NOTE_NAMES[((U.key%12)+12)%12],   U.key/11);
     drawKnobCell(2,"Rate",  RATE_NAMES[U.rate],               U.rate/(RATE_NAMES.length-1));
     drawKnobCell(3,"NoteLn",GATE_NAMES[U.gate],               U.gate/(GATE_NAMES.length-1));
-    drawKnobCell(4,"S1 Ch", ""+(U.s1_channel+1),              U.s1_channel/15);  // knob 5
-    drawKnobCell(5,"S2 Ch", ""+(U.s2_channel+1),              U.s2_channel/15);  // knob 6
-    drawKnobCell(6,"", "", null);          // knob 7 free
-    drawKnobCell(7,"", "", null);          // knob 8 free
+    drawKnobCell(4,"S1 Ch", ""+(U.s1_channel+1),              U.s1_channel/15);
+    drawKnobCell(5,"S2 Ch", ""+(U.s2_channel+1),              U.s2_channel/15);
+    drawKnobCell(6,"", "", null);
+    drawKnobCell(7,"", "", null);
   }
 }
 
@@ -312,8 +398,6 @@ globalThis.init = function(){
 let saveTick=0;
 globalThis.tick = function(){
   pollDsp();
-  /* Re-assert UI-owned params every ~30 ticks (~0.5s) so a suspend/resume DSP
-     reload can't silently revert them (Key, Scale, etc. now stick reliably). */
   if((pollTick % 30)===0) assertOwnedParams();
   refreshLeds();
   draw();

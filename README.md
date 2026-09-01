@@ -1,12 +1,13 @@
-# Maze Seq — dual generative sequencer for Ableton Move (Schwung)
+# Maze — dual generative sequencer for Ableton Move (Schwung)
 
-Two Moog-Labyrinth-inspired generative sequencers for the [Schwung](https://github.com/charlesvestal/schwung)
-framework on Ableton Move. This repository ships **two** modules:
+Two Moog-Labyrinth-inspired generative sequencers for the
+[Schwung](https://github.com/charlesvestal/schwung) framework on Ableton Move.
+This repository ships **two** modules:
 
 | Module | ID | Type | What it is |
 |---|---|---|---|
-| **Maze Seq** | `maze_seq` | overtake tool | Full pad + step-button instrument with its own display |
-| **Maze Seq Lite** | `maze_seq_lite` | slot MIDI FX | The same engine as a chain MIDI-FX slot (auto knob menu) |
+| **Maze** | `maze_seq` | overtake tool | Full pad + step-button instrument with its own display |
+| **Maze Lite** | `maze_seq_lite` | slot MIDI FX | The same engine as a chain MIDI-FX slot (auto knob menu) |
 
 Both run two 8-step generative sequencers that clock-sync to the Move transport,
 quantise random voltages to a scale, and play MIDI out — a recreation of the
@@ -17,26 +18,45 @@ Labyrinth's dual generative sequencer section.
 ## Features
 
 - **Dual 8-step generative sequencers** with per-step random CV, quantised to a scale.
-- **Corrupt** — mutates stored voltages, and past 12 o'clock flips bits (evolving patterns).
-- **CV Range** — bipolar pitch spread around the root, 0–100.
-- **Trig Mix** — velocity cross-fade between Seq 1 and Seq 2 (−63 = Seq1 only @127, noon = both @100, +64 = Seq2 only @127).
-- **Length / Bit-flip / Advance** per sequencer.
+- **Corrupt (0–100)** — mutates stored voltages; past 12 o'clock also flips bits (evolving patterns).
+- **Range (0–100)** — bipolar pitch spread around the root.
+- **Trig Mix** — velocity cross-fade between Seq 1 and Seq 2 (−63 = Seq1 only @127, centre = both @100, +64 = Seq2 only @127).
+- **Length / Bit Flip / Advance** per sequencer.
 - **12 scales**, selectable key, note-rate (1/32…1 bar), gate length (1/4…2 steps).
 - **Clock-synced** to the Move transport (24 PPQN, start/stop/continue).
-- **Pattern + position persistence** (Maze Seq tool) — survives exit.
+- **Pattern + position persistence** (Maze tool) — survives exit.
 
-### Maze Seq (tool) hardware layout
-- **16 step buttons** = the two sequencers. 1–8 = Seq1 (red bit / yellow play head), 9–16 = Seq2 (blue bit / yellow play head). Press to flip a bit.
-- **Top 3 pad rows** = a fixed scale keyboard. Middle-row, first pad = root; press pads to transpose the whole sequence up/down by scale degree. **+ / −** shift an octave.
+### Maze (tool) hardware layout
+- **16 step buttons** = the two sequencers. 1–8 = Seq1 (red bit / yellow play head),
+  9–16 = Seq2 (blue bit / yellow play head). Press to flip a bit. The play head
+  stays lit when the transport is stopped.
+- **Top 3 pad rows** = a fixed scale keyboard (each row = one octave, ascending
+  scale degrees left→right; the middle-row first pad is the root). Press a pad to
+  transpose the whole sequence to that interval. Octave roots light white, the
+  active pad lights teal.
+- **+ / −** = shift the pad keyboard up/down an octave to reach higher/lower
+  registers. The sounding note doesn't change — the layout moves, and the
+  highlighted pad follows the same note to its new row.
 - **Bottom pad row** = per-sequencer advance ◄/► and length−.
-- **Knobs, Track 1 page:** Seq1 Corrupt / Range / Length, Trig Mix, Seq2 Corrupt / Range / Length.
-- **Knobs, Track 2 page:** Scale, Key, Note Rate, Note Length, Seq1 Ch, Seq2 Ch.
-- **Back** = hide (keeps playing); **Shift+Back** = exit.
+- **Jog wheel** = switch between the two knob pages.
+- **Knobs — Sequencers page:** 1 Corrupt, 2 Range, 3 Length (Seq1, red LEDs);
+  4 Trig Mix (red/white/teal-blue LED); 5 Corrupt, 6 Range, 7 Length (Seq2,
+  teal-blue LEDs).
+- **Knobs — Global page:** 1 Scale, 2 Key, 3 Note Rate, 4 Note Length (white LEDs);
+  5 Seq1 Channel, 6 Seq2 Channel (green LEDs).
+- **Back** = hide (keeps playing in the background); **Shift+Back** = exit.
+- Knob-indicator LEDs are colour-coded per group (Move's knob LEDs are palette,
+  not brightness); the on-screen value bars show the proportional value.
 
-### Maze Seq Lite (slot MIDI FX)
-Insert in a MIDI-FX slot, route to a synth, press Play. Seq 1 page: Corrupt,
-CV Range, Length, Bit Flip, Advance, Trig Mix. Seq 2 page: same minus Trig Mix.
-Global page: Scale, Note Rate, Note Length. Incoming notes set the root.
+### Maze Lite (slot MIDI FX)
+Insert in a MIDI-FX slot, route to a synth, press Play. Pages in order:
+- **Sequencer 1:** Corrupt, Range, Length, Bit Flip, Advance, Trig Mix.
+- **Sequencer 2:** Corrupt, Range, Length, Bit Flip, Advance, Trig Mix (same
+  Trig Mix as page 1, kept in sync).
+- **Global:** Scale, Note Rate, Note Length.
+
+Bit Flip and Advance are momentary buttons (fire once per press/turn). Incoming
+notes set the root (transpose).
 
 ---
 
@@ -53,11 +73,11 @@ Global page: Scale, Note Rate, Note Length. Incoming notes set the root.
    scp maze_seq_lite-module.tar.gz ableton@<MOVE_IP>:/tmp/
    ssh ableton@<MOVE_IP> 'cd /data/UserData/schwung/modules/midi_fx && tar xzf /tmp/maze_seq_lite-module.tar.gz'
    ```
-3. Power-cycle the Move. **Maze Seq** appears in Shadow → Tools; **Maze Seq Lite** in a MIDI-FX slot.
+3. Power-cycle the Move. **Maze** appears in Shadow → Tools; **Maze Lite** in a MIDI-FX slot.
 
 ### Option B — Schwung Manager / Module Store
-Once listed in the Schwung catalog (see *Publishing* below), install from the
-Schwung Manager web UI at `http://move.local:7700`.
+Once listed in the Schwung catalog, install from the Schwung Manager web UI at
+`http://move.local:7700`.
 
 ---
 
@@ -89,22 +109,16 @@ cp <schwung>/src/host/midi_fx_api_v1.h   src/include/
 ```
 src/
   maze_seq/                 # overtake tool
-    module.json
-    ui.js
-    help.json
+    module.json  ui.js  help.json
     dsp/maze_seq.c
   maze_seq_lite/            # slot MIDI FX
-    module.json
-    help.json
+    module.json  help.json
     dsp/maze_seq_lite.c
   include/                  # vendored Schwung headers (not committed)
-    plugin_api_v1.h
-    midi_fx_api_v1.h
 scripts/
-  build.sh
-  Dockerfile
+  build.sh  Dockerfile
 .github/workflows/release.yml
-release.json
+release.json  catalog-entries.json
 ```
 
 ---

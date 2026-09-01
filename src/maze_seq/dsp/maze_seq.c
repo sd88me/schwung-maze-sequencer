@@ -281,8 +281,8 @@ static void *maze_create(const char *module_dir, const char *json_defaults){
     L->scale=1; L->key=0; L->rate=1; L->gate=3; L->trig_mix=0;
     L->transpose=0; L->root=60;
     seq_randomize(&L->s[0]); seq_randomize(&L->s[1]);
-    L->s[0].cv_range=50; L->s[0].channel=0;   /* ==>> EDIT ME: default Seq1 ch */
-    L->s[1].cv_range=50; L->s[1].channel=1;   /* ==>> EDIT ME: default Seq2 ch */
+    L->s[0].cv_range=20; L->s[0].channel=0;   /* ==>> EDIT ME: default Seq1 ch */
+    L->s[1].cv_range=20; L->s[1].channel=0;   /* ==>> EDIT ME: default Seq2 ch */
 
     pthread_mutex_init(&L->state_mutex, NULL);
     maze_load_state(L);                        /* one-time load (like tb3po) */

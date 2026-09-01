@@ -10,6 +10,12 @@
  *  - Trig Mix cross-fades velocity/accents between Seq1 and Seq2.
  *  - Incoming notes are CONSUMED: they only set the ROOT (transpose).
  *
+ * v1.1 changes:
+ *  - Bit Flip / Advance are MOMENTARY triggers (enum access:"write" in the UI):
+ *    they fire ONCE per press/turn, on any non-idle value.
+ *  - trig_mix_b is an alias of trig_mix so the same Trig Mix control can live on
+ *    both the Seq1 and Seq2 pages, always in sync (they read/write one variable).
+ *
  * No file I/O here, so nothing to move off the audio thread (unlike the tool).
  * You (a non-coder) only ever need to touch bits marked  ==>> EDIT ME.
  * ===========================================================================*/
@@ -52,6 +58,7 @@ static const scale_t SCALES[]={
 
 static const int RATE_PULSES[]={3,6,12,24,48,96};
 #define NUM_RATES ((int)(sizeof(RATE_PULSES)/sizeof(RATE_PULSES[0])))
+/* Gate length as a multiple of one step: index 0..7 -> 1/4 .. 8/4 (i.e. 2) steps */
 static const float GATE_STEPS[]={0.25f,0.5f,0.75f,1.0f,1.25f,1.5f,1.75f,2.0f};
 #define NUM_GATES ((int)(sizeof(GATE_STEPS)/sizeof(GATE_STEPS[0])))
 
@@ -66,10 +73,16 @@ typedef struct { int note, ch; long off_pulse; int active; } voice_t;
 typedef struct {
     seq_t s[2];
     int   scale, rate, gate, trig_mix, root;
-    int   last_bit_flip[2], last_advance[2];
     int   running; long pulse;
     voice_t voices[MAX_ACTIVE];
 } maze_t;
+
+/* A momentary trigger fires unless the incoming value is the idle spelling
+   ("off") or the idle index ("0"). access:"write" means the host never scrubs
+   it with a knob, so this only ever fires on a real press/turn. */
+static inline int trig_fired(const char *val){
+    return (strcmp(val,"off")!=0 && strcmp(val,"0")!=0);
+}
 
 static void seq_randomize(seq_t *q){
     q->length=NUM_STEPS; q->play=-1;
@@ -197,14 +210,18 @@ static void maze_set_param(void *inst,const char *key,const char *val){
     if      (!strcmp(key,"s1_corrupt"))  L->s[0].corrupt  =(v<0?0:(v>100?100:v));
     else if (!strcmp(key,"s1_cv_range")) L->s[0].cv_range =(v<0?0:(v>100?100:v));
     else if (!strcmp(key,"s1_length"))   L->s[0].length   = (v<1?1:(v>8?8:v));
-    else if (!strcmp(key,"s1_bit_flip")){ if(v!=L->last_bit_flip[0]){ int p=L->s[0].play<0?0:L->s[0].play; L->s[0].bit[p]=!L->s[0].bit[p]; if(L->s[0].bit[p])L->s[0].cv[p]=rng_bip(); L->last_bit_flip[0]=v; } }
-    else if (!strcmp(key,"s1_advance"))  { if(v!=L->last_advance[0]){ int n=L->s[0].length<1?1:L->s[0].length; L->s[0].play=(L->s[0].play+1)%n; L->last_advance[0]=v; } }
+    /* momentary: flip the current step once per fire */
+    else if (!strcmp(key,"s1_bit_flip")){ if(trig_fired(val)){ int p=L->s[0].play<0?0:L->s[0].play; L->s[0].bit[p]=!L->s[0].bit[p]; if(L->s[0].bit[p])L->s[0].cv[p]=rng_bip(); } }
+    /* momentary: advance the play head once per fire */
+    else if (!strcmp(key,"s1_advance")){ if(trig_fired(val)){ int n=L->s[0].length<1?1:L->s[0].length; L->s[0].play=(L->s[0].play+1)%n; } }
     else if (!strcmp(key,"s2_corrupt"))  L->s[1].corrupt  =(v<0?0:(v>100?100:v));
     else if (!strcmp(key,"s2_cv_range")) L->s[1].cv_range =(v<0?0:(v>100?100:v));
     else if (!strcmp(key,"s2_length"))   L->s[1].length   = (v<1?1:(v>8?8:v));
-    else if (!strcmp(key,"s2_bit_flip")){ if(v!=L->last_bit_flip[1]){ int p=L->s[1].play<0?0:L->s[1].play; L->s[1].bit[p]=!L->s[1].bit[p]; if(L->s[1].bit[p])L->s[1].cv[p]=rng_bip(); L->last_bit_flip[1]=v; } }
-    else if (!strcmp(key,"s2_advance"))  { if(v!=L->last_advance[1]){ int n=L->s[1].length<1?1:L->s[1].length; L->s[1].play=(L->s[1].play+1)%n; L->last_advance[1]=v; } }
+    else if (!strcmp(key,"s2_bit_flip")){ if(trig_fired(val)){ int p=L->s[1].play<0?0:L->s[1].play; L->s[1].bit[p]=!L->s[1].bit[p]; if(L->s[1].bit[p])L->s[1].cv[p]=rng_bip(); } }
+    else if (!strcmp(key,"s2_advance")){ if(trig_fired(val)){ int n=L->s[1].length<1?1:L->s[1].length; L->s[1].play=(L->s[1].play+1)%n; } }
+    /* trig_mix and its alias trig_mix_b both drive the SAME value (in sync) */
     else if (!strcmp(key,"trig_mix"))    L->trig_mix=(v<-63?-63:(v>64?64:v));
+    else if (!strcmp(key,"trig_mix_b"))  L->trig_mix=(v<-63?-63:(v>64?64:v));
     else if (!strcmp(key,"scale"))       L->scale=(v<0?0:(v>=NUM_SCALES?NUM_SCALES-1:v));
     else if (!strcmp(key,"note_rate"))   L->rate=(v<0?0:(v>=NUM_RATES?NUM_RATES-1:v));
     else if (!strcmp(key,"note_length")) L->gate=(v<0?0:(v>=NUM_GATES?NUM_GATES-1:v));
@@ -212,18 +229,19 @@ static void maze_set_param(void *inst,const char *key,const char *val){
 static int maze_get_param(void *inst,const char *key,char *buf,int len){
     maze_t *L=(maze_t*)inst;
     if(!L||!key||!buf) return -1;
+    /* momentary triggers report a constant idle spelling */
+    if (!strcmp(key,"s1_bit_flip")||!strcmp(key,"s1_advance")||
+        !strcmp(key,"s2_bit_flip")||!strcmp(key,"s2_advance"))
+        return snprintf(buf,len,"off");
     int v;
     if      (!strcmp(key,"s1_corrupt"))  v=L->s[0].corrupt;
     else if (!strcmp(key,"s1_cv_range")) v=L->s[0].cv_range;
     else if (!strcmp(key,"s1_length"))   v=L->s[0].length;
-    else if (!strcmp(key,"s1_bit_flip")) v=L->last_bit_flip[0];
-    else if (!strcmp(key,"s1_advance"))  v=L->last_advance[0];
     else if (!strcmp(key,"s2_corrupt"))  v=L->s[1].corrupt;
     else if (!strcmp(key,"s2_cv_range")) v=L->s[1].cv_range;
     else if (!strcmp(key,"s2_length"))   v=L->s[1].length;
-    else if (!strcmp(key,"s2_bit_flip")) v=L->last_bit_flip[1];
-    else if (!strcmp(key,"s2_advance"))  v=L->last_advance[1];
     else if (!strcmp(key,"trig_mix"))    v=L->trig_mix;
+    else if (!strcmp(key,"trig_mix_b"))  v=L->trig_mix;   /* alias -> same value */
     else if (!strcmp(key,"scale"))       v=L->scale;
     else if (!strcmp(key,"note_rate"))   v=L->rate;
     else if (!strcmp(key,"note_length")) v=L->gate;
