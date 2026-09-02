@@ -41,14 +41,14 @@
     { "key": "s1_corrupt",  "name": "1 Corrupt", "type": "int", "min": 0, "max": 100, "step": 1 },
     { "key": "s1_cv_range", "name": "1 Range",   "type": "int", "min": 0, "max": 100, "step": 1 },
     { "key": "s1_length",   "name": "1 Length",  "type": "int", "min": 1, "max": 8,   "step": 1 },
-    { "key": "s1_bit_flip", "name": "1 Bit Flip","type": "enum", "options": ["off","Flip"], "access": "write" },
-    { "key": "s1_advance",  "name": "1 Advance", "type": "enum", "options": ["off","Adv"],  "access": "write" },
+    { "key": "s1_bit_flip", "name": "1 Bit Flip","type": "enum", "options": ["off","go"], "access": "write" },
+    { "key": "s1_advance",  "name": "1 Advance", "type": "enum", "options": ["off","go"], "access": "write" },
 
     { "key": "s2_corrupt",  "name": "2 Corrupt", "type": "int", "min": 0, "max": 100, "step": 1 },
     { "key": "s2_cv_range", "name": "2 Range",   "type": "int", "min": 0, "max": 100, "step": 1 },
     { "key": "s2_length",   "name": "2 Length",  "type": "int", "min": 1, "max": 8,   "step": 1 },
-    { "key": "s2_bit_flip", "name": "2 Bit Flip","type": "enum", "options": ["off","Flip"], "access": "write" },
-    { "key": "s2_advance",  "name": "2 Advance", "type": "enum", "options": ["off","Adv"],  "access": "write" },
+    { "key": "s2_bit_flip", "name": "2 Bit Flip","type": "enum", "options": ["off","go"], "access": "write" },
+    { "key": "s2_advance",  "name": "2 Advance", "type": "enum", "options": ["off","go"], "access": "write" },
 
     { "key": "trig_mix",    "name": "Trig Mix",  "type": "int", "min": -63, "max": 64, "step": 1 },
     { "key": "trig_mix_b",  "name": "Trig Mix",  "type": "int", "min": -63, "max": 64, "step": 1 },
